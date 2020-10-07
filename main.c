@@ -1,0 +1,130 @@
+/***************************************************************************//**
+ * @file
+ * @brief Silicon Labs Bluetooth mesh light switch example
+ * This example implements a Bluetooth mesh light switch.
+ *******************************************************************************
+ * # License
+ * <b>Copyright 2018 Silicon Laboratories Inc. www.silabs.com</b>
+ *******************************************************************************
+ *
+ * The licensor of this software is Silicon Laboratories Inc. Your use of this
+ * software is governed by the terms of Silicon Labs Master Software License
+ * Agreement (MSLA) available at
+ * www.silabs.com/about-us/legal/master-software-license-agreement. This
+ * software is distributed to you in Source Code format and is governed by the
+ * sections of the MSLA applicable to Source Code.
+ *
+ ******************************************************************************/
+
+/* Board headers */
+#include "init_mcu.h"
+#include "init_board.h"
+#include "init_app.h"
+
+/* Bluetooth stack headers */
+#include "gatt_db.h"
+#include <mesh_sizes.h>
+
+/* Device initialization header */
+#include "hal-config.h"
+
+/* Application code */
+#include "app.h"
+#include "darwin_log.h"
+
+/***************************************************************************//**
+ * @addtogroup Application
+ * @{
+ ******************************************************************************/
+
+/***************************************************************************//**
+ * @addtogroup app
+ * @{
+ ******************************************************************************/
+
+/// Maximum number of simultaneous Bluetooth connections
+#define MAX_CONNECTIONS 1
+
+/// Heap for Bluetooth stack
+uint8_t bluetooth_stack_heap[DEFAULT_BLUETOOTH_HEAP(MAX_CONNECTIONS) + BTMESH_HEAP_SIZE + 1760];
+
+/// Bluetooth advertisement set configuration
+///
+/// At minimum the following is required:
+/// * One advertisement set for Bluetooth LE stack (handle number 0)
+/// * One advertisement set for Mesh data (handle number 1)
+/// * One advertisement set for Mesh unprovisioned beacons (handle number 2)
+/// * One advertisement set for Mesh unprovisioned URI (handle number 3)
+/// * N advertisement sets for Mesh GATT service advertisements
+/// (one for each network key, handle numbers 4 .. N+3)
+///
+#define MAX_ADVERTISERS (4 + MESH_CFG_MAX_NETKEYS)
+
+/// Priorities for bluetooth link layer operations
+static gecko_bluetooth_ll_priorities linklayer_priorities = GECKO_BLUETOOTH_PRIORITIES_DEFAULT;
+
+/// Bluetooth stack configuration
+static const gecko_configuration_t config =
+{
+#if defined(FEATURE_LFXO) || defined(PLFRCO_PRESENT)
+// Disable sleep on the following boards to make buttons's interrupts work.
+// If you enable sleep on these boards, WSTK pushbuttons will not wake up chip.
+// Only Ports A and B support EM2 wake-up. Please refer to EFR32xG21 reference manual GPIO chapter.
+#if defined(BRD4180A) || defined(BRD4181A)
+  .sleep.flags = 0,
+#else
+  .sleep.flags = SLEEP_FLAGS_DEEP_SLEEP_ENABLE,
+#endif
+#else
+  .sleep.flags = 0,
+#endif
+  .bluetooth.max_connections = MAX_CONNECTIONS,
+  .bluetooth.max_advertisers = MAX_ADVERTISERS,
+  .bluetooth.heap = bluetooth_stack_heap,
+  .bluetooth.heap_size = sizeof(bluetooth_stack_heap) - BTMESH_HEAP_SIZE,
+#if defined(FEATURE_LFXO)
+  .bluetooth.sleep_clock_accuracy = 100, // ppm
+#elif defined(PLFRCO_PRESENT)
+  .bluetooth.sleep_clock_accuracy = 500, // ppm
+#endif
+  .bluetooth.linklayer_priorities = &linklayer_priorities,
+  .gattdb = &bg_gattdb_data,
+  .btmesh_heap_size = BTMESH_HEAP_SIZE,
+  .pa.config_enable = 1, // Set this to be a valid PA config
+#if defined(FEATURE_PA_INPUT_FROM_VBAT)
+  .pa.input = GECKO_RADIO_PA_INPUT_VBAT, // Configure PA input to VBAT
+#else
+  .pa.input = GECKO_RADIO_PA_INPUT_DCDC,
+#endif // defined(FEATURE_PA_INPUT_FROM_VBAT)
+  .max_timers = 16,
+  .rf.flags = GECKO_RF_CONFIG_ANTENNA,   // Enable antenna configuration.
+  .rf.antenna = GECKO_RF_ANTENNA,   // Select antenna path!
+};
+
+/***************************************************************************//**
+ * Main function.
+ ******************************************************************************/
+int main(void)
+{
+  // Initialize device
+  initMcu();
+  RETARGET_SwoInit();
+  ALOG("(C) Copyright (C) 2020 Darwin Tech, LLC\n");
+  ALOG("(C) Copyright (C) 2020 Silicon Labs\n");
+  ALOG("EMC Gateway compiled " __DATE__ ", " __TIME__ "\n");
+
+  // Initialize board
+  initBoard();
+  // Initialize application
+  initApp();
+  initVcomEnable();
+
+  // Minimize advertisement latency by allowing the advertiser to always
+  // interrupt the scanner.
+  linklayer_priorities.scan_max = linklayer_priorities.adv_min + 1;
+  // Start application
+  appMain(&config);
+}
+
+/** @} (end addtogroup app) */
+/** @} (end addtogroup Application) */
